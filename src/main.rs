@@ -3,7 +3,7 @@ use clap::Parser;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
-use std::io::{BufWriter, Error, Write};
+use std::io::{BufWriter, Write};
 
 const MAX_NUM_OF_LINE: i32 = 300_000i32;
 
@@ -11,11 +11,12 @@ const MAX_NUM_OF_LINE: i32 = 300_000i32;
 #[command(author, version, about, long_about = None)] // Read from `Cargo.toml`
 struct Cli {
     #[arg(short, long, help = "Path to file to be split")]
+    ///
     file: String,
 
-    #[arg(short, long, default_value = "split")]
-    /// Name of the new files. This will be appended with an incremented number (default: split)
-    new_file_name: Option<String>,
+    #[arg(short, long, default_value = "split", help = "Name of the new files. This will be appended with an incremented number (default: split)")]
+    ///
+    output_pattern: Option<String>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -55,7 +56,7 @@ fn main() -> std::io::Result<()> {
         let output_filename = format!(
             "{}_{}_{}.{}",
             filname,
-            cli.new_file_name.clone().unwrap().to_string(),
+            cli.output_pattern.clone().unwrap().to_string(),
             incr.to_string(),
             extention
         );
