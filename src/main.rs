@@ -1,87 +1,75 @@
+mod cli;
+use cli::Cli;
 use clap::Parser;
 
-use std::env;
+use crossterm::event::{EnableMouseCapture, DisableMouseCapture};
+use crossterm::execute;
+use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen, disable_raw_mode, LeaveAlternateScreen};
+use tui::Terminal;
+use tui::backend::CrosstermBackend;
+
+use std::time::Duration;
+use std::{env, io};
+use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::io::{BufWriter, Write};
 
-const MAX_NUM_OF_LINE: i32 = 300_000i32;
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)] // Read from `Cargo.toml`
-struct Cli {
-    #[arg(short, long, help = "Path to file to be split")]
-    ///
-    file: String,
 
-    #[arg(short, long, default_value = "split", help = "Name of the new files. This will be appended with an incremented number (default: split)")]
-    ///
-    output_pattern: Option<String>,
+
+struct App {
+    scroll: u16,
 }
 
-fn main() -> std::io::Result<()> {
-    let cli = Cli::parse();
-
-    let current_dir = env::current_dir().unwrap();
-    let filepath = current_dir.join(&cli.file);
-    println!("file: {:?}", &filepath);
-    let file = File::open(&filepath)?;
-    let mut reader = BufReader::new(&file);
-    let mut lines: std::io::Lines<&mut BufReader<&File>> = reader.by_ref().lines();
-    let lines_to_write = lines
-        .by_ref()
-        .map(|x| x.expect("Error while unwrapping lines from input file") + "\n")
-        .collect::<Vec<String>>();
-    dbg!(&lines_to_write.first());
-    let num_total_of_line = lines_to_write.len();
-    let num_of_file = (num_total_of_line / 300_000) + {
-        (num_total_of_line % 300_000 != 0).then_some(1).unwrap()
-    };
-
-    println!(
-        "number of line: {}, Size: {}MB",
-        num_total_of_line,
-        file.metadata().unwrap().len() / 1_000_000
-    );
-    println!("Number of split files: {}", num_of_file);
-
-    // Select n row of file and then make a file with new-file-name as base pattern
-    // incremented by one
-
-    let (mut k, mut l) = (0i32, 300_000i32);
-    let mut rev_acc = num_total_of_line as i32 - 300_000i32;
-    for incr in 1..=num_of_file {
-        let filname = cli.file.split(".").into_iter().nth(0).unwrap().to_string();
-        let extention = cli.file.split(".").into_iter().nth(1).unwrap().to_string();
-        let output_filename = format!(
-            "{}_{}_{}.{}",
-            filname,
-            cli.output_pattern.clone().unwrap().to_string(),
-            incr.to_string(),
-            extention
-        );
-        let output_filepath = current_dir.join(output_filename);
-        println!("{:?}", output_filepath);
-        dbg!(incr, k, l, rev_acc);
-        let bach: Vec<&[u8]> = lines_to_write
-            .get((k as usize)..(l as usize))
-            .unwrap()
-            .iter()
-            .map(|x| x.as_bytes())
-            .collect();
-        let bach_alloc: Vec<u8> = bach.iter().flat_map(|&x| x).copied().collect();
-        let batch: &[u8] = &bach_alloc;
-        let mut writer = BufWriter::new(File::create(output_filepath)?);
-        writer.write_all(batch)?;
-
-        k = l;
-        if rev_acc - MAX_NUM_OF_LINE > 0 {
-            rev_acc -= MAX_NUM_OF_LINE;
-            l += MAX_NUM_OF_LINE;
-        } else if rev_acc - MAX_NUM_OF_LINE < 0 {
-            l += rev_acc.abs();
-        }
+impl App {
+    fn new() -> App {
+        App { scroll: 0 }
     }
+
+    fn on_tick(&mut self) {
+        self.scroll += 1;
+        self.scroll %= 10;
+    }
+}
+
+fn run_terminal_tui() -> Result<(), Box<dyn Error>> {
+    // setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // create app and run it
+    let tick_rate = Duration::from_millis(250);
+    let app = App::new();
+    let res = run_app(&mut terminal, app, tick_rate);
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
+}
+fn main() -> Result<(), Box<dyn Error>> {
+    let cli: Cli = Cli::parse();
+
+    if cli.is_split_mode() {
+        run_terminal_tui();
+    } else {
+        cli.split_file()?;
+    }
+
 
     Ok(())
 }
