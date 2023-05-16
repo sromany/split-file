@@ -1,12 +1,14 @@
-use std::{env, fs::File, error::Error};
+use clap::{Parser, ValueEnum};
 use std::io::{BufRead, BufReader, Read};
 use std::io::{BufWriter, Write};
-use clap::Parser;
-const MAX_NUM_OF_LINE: i32 = 300_000i32;
+use std::{env, error::Error, fs::File};
 
-enum Mode {
-    VIEW_MODE,
-    SPLIT_MODE
+static MAX_NUM_OF_LINE: usize = 300_000usize;
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Mode {
+    View,
+    Split,
 }
 
 #[derive(Parser)]
@@ -16,28 +18,37 @@ pub struct Cli {
     ///
     file: String,
 
-    #[arg(short, long, default_value = "split", help = "Name of the new files. This will be appended with an incremented number (default: split)")]
+    #[arg(
+        short,
+        long,
+        default_value = "split",
+        help = "Name of the new files. This will be appended with an incremented number (default: split)"
+    )]
     ///
     output_pattern: Option<String>,
 
+    //TODO: Options Mutually Exclusive ?
     #[arg(short, long, help = "Option to view")]
     ///
     view_mode: bool,
 
-
     #[arg(short, long, help = "Option to view")]
     ///
     split_mode: bool,
+
+    #[arg(value_enum, short, long, help = "Mode view to select", )]
+    ///
+    pub mode: Mode,
 }
 
 impl Cli {
 
     pub fn is_split_mode(&self) -> bool {
-        return self.split_mode
+        return self.split_mode;
     }
 
     pub fn is_view_mode(&self) -> bool {
-        return self.view_mode
+        return self.view_mode;
     }
 
     pub fn split_file(&self) -> Result<(), Box<dyn Error>> {
@@ -54,8 +65,8 @@ impl Cli {
             .collect::<Vec<String>>();
         dbg!(&lines_to_write.first());
         let num_total_of_line = lines_to_write.len();
-        let num_of_file = (num_total_of_line / 300_000) + {
-            (num_total_of_line % 300_000 != 0).then_some(1).unwrap()
+        let num_of_file = (num_total_of_line / MAX_NUM_OF_LINE) + {
+            (num_total_of_line % MAX_NUM_OF_LINE != 0).then_some(1).unwrap()
         };
 
         println!(
@@ -95,10 +106,10 @@ impl Cli {
             writer.write_all(batch)?;
 
             k = l;
-            if rev_acc - MAX_NUM_OF_LINE > 0 {
-                rev_acc -= MAX_NUM_OF_LINE;
-                l += MAX_NUM_OF_LINE;
-            } else if rev_acc - MAX_NUM_OF_LINE < 0 {
+            if rev_acc - MAX_NUM_OF_LINE as i32 > 0i32 {
+                rev_acc -= MAX_NUM_OF_LINE as i32;
+                l += MAX_NUM_OF_LINE as i32;
+            } else if (rev_acc - MAX_NUM_OF_LINE as i32) < 0i32 {
                 l += rev_acc.abs();
             }
         }

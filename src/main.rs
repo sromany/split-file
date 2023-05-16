@@ -1,29 +1,29 @@
 mod cli;
-use cli::Cli;
 use clap::Parser;
+use cli::Cli;
 
-use crossterm::event::{EnableMouseCapture, DisableMouseCapture};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, KeyCode, Event, self};
 use crossterm::execute;
-use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen, disable_raw_mode, LeaveAlternateScreen};
-use tui::Terminal;
-use tui::backend::CrosstermBackend;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
+use tui::backend::{CrosstermBackend, Backend};
+use tui::layout::{Layout, Direction, Constraint, Alignment};
+use tui::style::{Style, Color, Modifier};
+use tui::text::{Span, Spans};
+use tui::widgets::{Block, Borders, Paragraph, Wrap};
+use tui::{Terminal, Frame};
 
-use std::time::Duration;
-use std::{env, io};
 use std::error::Error;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
-use std::io::{BufWriter, Write};
-
-
-
+use std::time::{Duration, Instant};
+use std::{io};
 
 struct App {
     scroll: u16,
 }
 
 impl App {
-    fn new() -> App {
+    fn new() -> Self {
         App { scroll: 0 }
     }
 
@@ -61,15 +61,127 @@ fn run_terminal_tui() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    mut app: App,
+    tick_rate: Duration,
+) -> io::Result<()> {
+    let mut last_tick = Instant::now();
+    loop {
+        terminal.draw(|f| ui(f, &app))?;
+
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+        if crossterm::event::poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                if let KeyCode::Char('q') = key.code {
+                    return Ok(());
+                }
+            }
+        }
+        if last_tick.elapsed() >= tick_rate {
+            app.on_tick();
+            last_tick = Instant::now();
+        }
+    }
+}
+
+fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+    let size = f.size();
+
+    // Words made "loooong" to demonstrate line breaking.
+    let s = "Veeeeeeeeeeeeeeeery    loooooooooooooooooong   striiiiiiiiiiiiiiiiiiiiiiiiiing.   ";
+    let mut long_line = s.repeat(usize::from(size.width) / s.len() + 4);
+    long_line.push('\n');
+
+    let block = Block::default().style(Style::default().bg(Color::White).fg(Color::Black));
+    f.render_widget(block, size);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(5)
+        .constraints(
+            [
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+            ]
+            .as_ref(),
+        )
+        .split(size);
+
+    let text = vec![
+        Spans::from("This is a line "),
+        Spans::from(Span::styled(
+            "This is a line   ",
+            Style::default().fg(Color::Red),
+        )),
+        Spans::from(Span::styled(
+            "This is a line",
+            Style::default().bg(Color::Blue),
+        )),
+        Spans::from(Span::styled(
+            "This is a longer line",
+            Style::default().add_modifier(Modifier::CROSSED_OUT),
+        )),
+        Spans::from(Span::styled(&long_line, Style::default().bg(Color::Green))),
+        Spans::from(Span::styled(
+            "This is a line",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::ITALIC),
+        )),
+    ];
+
+    let create_block = |title| {
+        Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::White).fg(Color::Black))
+            .title(Span::styled(
+                title,
+                Style::default().add_modifier(Modifier::BOLD),
+            ))
+    };
+
+    let paragraph = Paragraph::new(text.clone())
+        .style(Style::default().bg(Color::White).fg(Color::Black))
+        .block(create_block("Left, no wrap"))
+        .alignment(Alignment::Left);
+    f.render_widget(paragraph, chunks[0]);
+
+    let paragraph = Paragraph::new(text.clone())
+        .style(Style::default().bg(Color::White).fg(Color::Black))
+        .block(create_block("Left, wrap"))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    f.render_widget(paragraph, chunks[1]);
+
+    let paragraph = Paragraph::new(text.clone())
+        .style(Style::default().bg(Color::White).fg(Color::Black))
+        .block(create_block("Center, wrap"))
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: true })
+        .scroll((app.scroll, 0));
+    f.render_widget(paragraph, chunks[2]);
+
+    let paragraph = Paragraph::new(text)
+        .style(Style::default().bg(Color::White).fg(Color::Black))
+        .block(create_block("Right, wrap"))
+        .alignment(Alignment::Right)
+        .wrap(Wrap { trim: true });
+    f.render_widget(paragraph, chunks[3]);
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli: Cli = Cli::parse();
 
-    if cli.is_split_mode() {
-        run_terminal_tui();
-    } else {
-        cli.split_file()?;
+    match cli.mode {
+        cli::Mode::View => run_terminal_tui()?,
+        cli::Mode::Split => cli.split_file()?
     }
-
 
     Ok(())
 }
