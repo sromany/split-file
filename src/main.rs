@@ -20,11 +20,15 @@ use std::{io};
 
 struct App {
     scroll: u16,
+    data: Vec<String>
 }
 
 impl App {
     fn new() -> Self {
-        App { scroll: 0 }
+        App {
+            scroll: 0,
+            data: Vec::new()
+        }
     }
 
     fn on_tick(&mut self) {
@@ -34,6 +38,13 @@ impl App {
 }
 
 fn run_terminal_tui() -> Result<(), Box<dyn Error>> {
+    //TODO: Retrieve buffered lit of file
+    // Compute how many lines can be printed in the terminal size as n (1 unit = char size)
+    // And then read those n + k line as buffer smoothering
+    let mut app = App::new();
+
+
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -43,7 +54,6 @@ fn run_terminal_tui() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let app = App::new();
     let res = run_app(&mut terminal, app, tick_rate);
 
     // restore terminal
@@ -76,7 +86,7 @@ fn run_app<B: Backend>(
             .unwrap_or_else(|| Duration::from_secs(0));
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
+                if let KeyCode::Char('q'|'Q') = key.code {
                     return Ok(());
                 }
             }
@@ -96,28 +106,27 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let mut long_line = s.repeat(usize::from(size.width) / s.len() + 4);
     long_line.push('\n');
 
-    let block = Block::default().style(Style::default().bg(Color::White).fg(Color::Black));
+    let common_style = Style::default().bg(Color::Black).fg(Color::White);
+    let block = Block::default().style(common_style);
     f.render_widget(block, size);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(5)
+        .margin(1)
         .constraints(
             [
-                Constraint::Percentage(25),
-                Constraint::Percentage(25),
-                Constraint::Percentage(25),
-                Constraint::Percentage(25),
+                Constraint::Percentage(100)
             ]
             .as_ref(),
         )
         .split(size);
 
-    let text = vec![
+
+    let mut text = vec![
         Spans::from("This is a line "),
         Spans::from(Span::styled(
             "This is a line   ",
-            Style::default().fg(Color::Red),
+            Style::default().fg(Color::Red).add_modifier(Modifier::SLOW_BLINK),
         )),
         Spans::from(Span::styled(
             "This is a line",
@@ -136,10 +145,14 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         )),
     ];
 
+    for line in app.data.iter() {
+        text.push(Spans::from(line.as_str()))
+    }
+
     let create_block = |title| {
         Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().bg(Color::White).fg(Color::Black))
+            .style(common_style)
             .title(Span::styled(
                 title,
                 Style::default().add_modifier(Modifier::BOLD),
@@ -152,36 +165,16 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         .alignment(Alignment::Left);
     f.render_widget(paragraph, chunks[0]);
 
-    let paragraph = Paragraph::new(text.clone())
-        .style(Style::default().bg(Color::White).fg(Color::Black))
-        .block(create_block("Left, wrap"))
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
-    f.render_widget(paragraph, chunks[1]);
-
-    let paragraph = Paragraph::new(text.clone())
-        .style(Style::default().bg(Color::White).fg(Color::Black))
-        .block(create_block("Center, wrap"))
-        .alignment(Alignment::Center)
-        .wrap(Wrap { trim: true })
-        .scroll((app.scroll, 0));
-    f.render_widget(paragraph, chunks[2]);
-
-    let paragraph = Paragraph::new(text)
-        .style(Style::default().bg(Color::White).fg(Color::Black))
-        .block(create_block("Right, wrap"))
-        .alignment(Alignment::Right)
-        .wrap(Wrap { trim: true });
-    f.render_widget(paragraph, chunks[3]);
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli: Cli = Cli::parse();
 
-    match cli.mode {
-        cli::Mode::View => run_terminal_tui()?,
-        cli::Mode::Split => cli.split_file()?
-    }
+    // match cli.mode {
+    //     cli::Mode::View => run_terminal_tui()?,
+    //     cli::Mode::Split => cli.split_file()?
+    // }
 
+    cli.fake_test();
     Ok(())
 }
